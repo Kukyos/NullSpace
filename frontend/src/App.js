@@ -21,6 +21,8 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
   const searchTimeoutRef = useRef(null);
   const [toasts, setToasts] = useState([]);
+  const [dataSource, setDataSource] = useState('');
+  const [isRealData, setIsRealData] = useState(true);
 
   // Define performSearch before it's used in useEffect
   const performSearch = useCallback(async (term) => {
@@ -34,10 +36,17 @@ function App() {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      await response.json();
+      const data = await response.json();
+      
+      // Show data source notification for search results
+      if (data.isRealData === false) {
+        addToast(`Search results from ${data.dataSource}`, 'warning');
+      }
+      
       // Don't replace allExperiments, we'll filter in the memoized function
     } catch (error) {
       console.error('Error searching experiments:', error);
+      addToast('Search failed - using local data', 'error');
     } finally {
       setIsSearching(false);
     }
@@ -95,8 +104,20 @@ function App() {
       }
       const data = await response.json();
       setAllExperiments(data.experiments || []);
+      setDataSource(data.dataSource || 'Unknown');
+      setIsRealData(data.isRealData !== false);
+      
+      // Show toast message based on data source
+      if (data.isRealData === false) {
+        addToast(`⚠️ Using ${data.dataSource} - NASA API temporarily unavailable`, 'warning');
+      } else if (data.dataSource === 'NASA OSDR') {
+        addToast('✅ Connected to live NASA OSDR database', 'success');
+      }
     } catch (error) {
       console.error('Error loading experiments:', error);
+      setDataSource('Mock Data (Network Error)');
+      setIsRealData(false);
+      addToast('⚠️ Using Mock Data - Unable to connect to NASA API', 'error');
       // Fallback to mock data if API fails
       const mockExperiments = [
         {
@@ -275,6 +296,23 @@ function App() {
             onSearchChange={handleSearchChange}
             isSearching={isSearching}
           />
+          
+          {/* Data Source Indicator */}
+          {dataSource && (
+            <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-full text-sm font-medium backdrop-blur-sm border ${
+              isRealData 
+                ? 'bg-green-500/10 border-green-500/30 text-green-400' 
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${
+                isRealData ? 'bg-green-400' : 'bg-amber-400'
+              } animate-pulse`}></div>
+              <span>Data Source: {dataSource}</span>
+              {!isRealData && (
+                <span className="text-xs opacity-75">(Fallback Mode)</span>
+              )}
+            </div>
+          )}
           
           {/* View Controls */}
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">

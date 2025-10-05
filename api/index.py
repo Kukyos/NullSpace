@@ -13,32 +13,48 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# NASA GeneLab API Integration
+# NASA OSDR API Integration
 async def fetch_nasa_experiments(limit: int = 15) -> List[Dict[str, Any]]:
-    """Fetch experiments from NASA GeneLab API"""
+    """Fetch experiments from NASA OSDR API"""
     try:
-        search_url = "https://genelab-data.ndc.nasa.gov/genelab/data/search/studies"
+        search_url = "https://osdr.nasa.gov/osdr/data/search"
         
         async with aiohttp.ClientSession() as session:
             search_params = {
-                'term': 'spaceflight OR microgravity OR space OR ISS',
+                'q': 'spaceflight OR microgravity OR space OR ISS',
                 'size': limit,
-                'from': 0,
-                'sort': 'relevance'
+                'from': 0
             }
             
             async with session.get(search_url, params=search_params, timeout=10) as response:
                 if response.status == 200:
                     data = await response.json()
-                    studies = data.get('studies', [])
+                    
+                    # Handle OSDR API response format
+                    hits_data = data.get('hits', {})
+                    if isinstance(hits_data, dict):
+                        total_hits = hits_data.get('total', {})
+                        if isinstance(total_hits, dict):
+                            total_count = total_hits.get('value', 0)
+                        else:
+                            total_count = total_hits
+                        
+                        study_hits = hits_data.get('hits', [])
+                    else:
+                        total_count = 0
+                        study_hits = []
+                    
+                    if total_count == 0 or not study_hits:
+                        logger.info("No studies found in OSDR API")
+                        return []
                     
                     experiments = []
-                    for study in studies[:limit]:
-                        experiment = format_nasa_experiment(study)
+                    for hit in study_hits[:limit]:
+                        experiment = format_nasa_experiment_osdr(hit)
                         if experiment:
                             experiments.append(experiment)
                     
-                    logger.info(f"Successfully fetched {len(experiments)} experiments from NASA GeneLab")
+                    logger.info(f"Successfully fetched {len(experiments)} experiments from NASA OSDR")
                     return experiments
                 else:
                     logger.error(f"NASA API request failed with status: {response.status}")
@@ -48,8 +64,87 @@ async def fetch_nasa_experiments(limit: int = 15) -> List[Dict[str, Any]]:
         logger.error(f"Error fetching NASA GeneLab data: {str(e)}")
         return []
 
+def format_nasa_experiment_osdr(hit: Dict) -> Optional[Dict[str, Any]]:
+    """Format NASA OSDR hit data for our application"""
+    try:
+        source = hit.get('_source', {})
+        if not source:
+            return None
+        
+        # Extract mission information
+        mission_data = source.get('Mission', {})
+        if isinstance(mission_data, dict):
+            mission_name = mission_data.get('Name', 'Unknown Mission')
+        else:
+            mission_name = str(mission_data) if mission_data else 'Unknown Mission'
+        
+        # Extract keywords
+        keywords = []
+        factor_name = source.get('Study Factor Name', '')
+        if factor_name:
+            keywords.append(factor_name.lower())
+        
+        assay_type = source.get('Study Assay Technology Type', '')
+        if assay_type:
+            keywords.append(assay_type.lower())
+        
+        # Add space-related keywords based on content
+        title = source.get('Study Title', '').lower()
+        description = source.get('Study Description', '').lower()
+        
+        space_keywords = ['microgravity', 'spaceflight', 'space', 'ISS', 'bone', 
+                         'muscle', 'cardiovascular', 'radiation', 'gene expression',
+                         'inflammation', 'immune']
+        
+        for keyword in space_keywords:
+            if keyword in title or keyword in description:
+                keywords.append(keyword)
+        
+        # Extract data types
+        data_types = []
+        if assay_type:
+            data_types.append(assay_type)
+            
+        assay_platform = source.get('Study Assay Technology Platform', '')
+        if assay_platform:
+            data_types.append(assay_platform)
+            
+        measurement_type = source.get('Study Assay Measurement Type', '')
+        if measurement_type:
+            data_types.append(measurement_type)
+        
+        # Truncate description
+        description_text = source.get('Study Description', '')
+        if len(description_text) > 400:
+            description_text = description_text[:400] + '...'
+        
+        experiment = {
+            'id': source.get('Accession', f"osdr-{hit.get('_id', 'unknown')}"),
+            'title': source.get('Study Title', 'Unknown Study'),
+            'summary': description_text,
+            'organism': source.get('organism', 'Unknown organism'),
+            'mission': mission_name,
+            'keywords': list(set([k for k in keywords if k]))[:8],  # Remove empty and limit
+            'dataTypes': list(set([dt for dt in data_types if dt]))[:5],  # Remove empty and limit
+            'publicationCount': 0,  # Would need separate API call to get this
+            'duration': 'Variable',
+            'submissionDate': '',
+            'releaseDate': source.get('Study Public Release Date', ''),
+            'projectType': source.get('Project Type', ''),
+            'flightProgram': source.get('Flight Program', ''),
+            'spaceProgram': source.get('Space Program', ''),
+            'managingCenter': source.get('Managing NASA Center', ''),
+            'assayTechnology': assay_type
+        }
+        
+        return experiment
+        
+    except Exception as e:
+        logger.error(f"Error formatting OSDR experiment: {str(e)}")
+        return None
+
 def format_nasa_experiment(study: Dict) -> Optional[Dict[str, Any]]:
-    """Format NASA study data for our application"""
+    """Format NASA study data for our application (legacy fallback)"""
     try:
         accession = study.get('accession', '')
         if not accession:
@@ -110,13 +205,13 @@ def format_nasa_experiment(study: Dict) -> Optional[Dict[str, Any]]:
         return None
 
 async def search_nasa_experiments(query: str, limit: int = 10) -> List[Dict[str, Any]]:
-    """Search NASA GeneLab experiments by query"""
+    """Search NASA OSDR experiments by query"""
     try:
-        search_url = "https://genelab-data.ndc.nasa.gov/genelab/data/search/studies"
+        search_url = "https://osdr.nasa.gov/osdr/data/search"
         
         async with aiohttp.ClientSession() as session:
             search_params = {
-                'term': query,
+                'q': query,
                 'size': limit,
                 'from': 0
             }
@@ -124,11 +219,27 @@ async def search_nasa_experiments(query: str, limit: int = 10) -> List[Dict[str,
             async with session.get(search_url, params=search_params, timeout=10) as response:
                 if response.status == 200:
                     data = await response.json()
-                    studies = data.get('studies', [])
+                    
+                    # Handle OSDR API response format
+                    hits_data = data.get('hits', {})
+                    if isinstance(hits_data, dict):
+                        total_hits = hits_data.get('total', {})
+                        if isinstance(total_hits, dict):
+                            total_count = total_hits.get('value', 0)
+                        else:
+                            total_count = total_hits
+                        
+                        study_hits = hits_data.get('hits', [])
+                    else:
+                        total_count = 0
+                        study_hits = []
+                    
+                    if total_count == 0 or not study_hits:
+                        return []
                     
                     experiments = []
-                    for study in studies:
-                        experiment = format_nasa_experiment(study)
+                    for hit in study_hits:
+                        experiment = format_nasa_experiment_osdr(hit)
                         if experiment:
                             experiments.append(experiment)
                     
@@ -247,13 +358,18 @@ async def root():
 
 @app.get("/api/experiments")
 async def get_experiments():
-    """Get all NASA bioscience experiments from GeneLab API"""
+    """Get all NASA bioscience experiments from OSDR API"""
     try:
         experiments = await fetch_nasa_experiments()
-        return {"experiments": experiments}
+        if experiments:
+            return {"experiments": experiments, "dataSource": "NASA OSDR", "isRealData": True}
+        else:
+            # Fallback to mock data if NASA API returns no results
+            return {"experiments": mock_experiments, "dataSource": "Mock Data", "isRealData": False}
     except Exception as e:
         # Fallback to mock data if NASA API fails
-        return {"experiments": mock_experiments}
+        logger.error(f"NASA API failed, using fallback data: {str(e)}")
+        return {"experiments": mock_experiments, "dataSource": "Mock Data (API Error)", "isRealData": False}
 
 @app.get("/api/knowledge-graph")
 async def get_knowledge_graph():
@@ -266,17 +382,21 @@ async def search_experiments(query: str = ""):
     if not query:
         try:
             experiments = await fetch_nasa_experiments()
-            return {"results": experiments}
-        except:
-            return {"results": mock_experiments}
+            if experiments:
+                return {"results": experiments, "dataSource": "NASA OSDR", "isRealData": True}
+            else:
+                return {"results": mock_experiments, "dataSource": "Mock Data", "isRealData": False}
+        except Exception as e:
+            logger.error(f"NASA API failed in search: {str(e)}")
+            return {"results": mock_experiments, "dataSource": "Mock Data (API Error)", "isRealData": False}
     
     try:
         # Try NASA API search first
         nasa_results = await search_nasa_experiments(query)
         if nasa_results:
-            return {"results": nasa_results, "query": query, "source": "NASA GeneLab"}
-    except:
-        pass
+            return {"results": nasa_results, "query": query, "dataSource": "NASA OSDR", "isRealData": True}
+    except Exception as e:
+        logger.error(f"NASA search API failed: {str(e)}")
     
     # Fallback to mock data search
     query_lower = query.lower()
@@ -290,7 +410,7 @@ async def search_experiments(query: str = ""):
             any(query_lower in keyword.lower() for keyword in exp["keywords"])):
             filtered.append(exp)
     
-    return {"results": filtered, "query": query, "source": "mock data"}
+    return {"results": filtered, "query": query, "dataSource": "Mock Data", "isRealData": False}
 
 @app.get("/health")
 async def health_check():
