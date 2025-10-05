@@ -1,0 +1,13 @@
+{
+  "name": "nullspace",
+  "version": "2.0.0",
+  "description": "NASA Bioscience Data Explorer with AI-powered knowledge graphs",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "cd frontend && npm start",
+    "install-deps": "cd frontend && npm install && cd ../backend && pip install -r requirements.txt"
+  },
+  "keywords": ["nasa", "bioscience", "ai", "knowledge-graph", "react", "fastapi"],
+  "author": "NULLspace Team",
+  "license": "MIT"
+}
