@@ -50,7 +50,7 @@ function App() {
     } finally {
       setIsSearching(false);
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     // Load initial data
@@ -69,7 +69,7 @@ function App() {
     return () => {
       window.removeEventListener('searchRelatedExperiments', handleRelatedExperimentsSearch);
     };
-  }, []);
+  }, [loadExperiments, loadGraphData, addToast]);
 
   // Debounced search effect
   useEffect(() => {
@@ -94,7 +94,7 @@ function App() {
     };
   }, [searchTerm, performSearch]);
 
-  const loadExperiments = async () => {
+  const loadExperiments = useCallback(async () => {
     try {
       setLoading(true);
       // Fetch experiments from our FastAPI backend
@@ -169,9 +169,9 @@ function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [addToast]);
 
-  const loadGraphData = async () => {
+  const loadGraphData = useCallback(async () => {
     try {
       // Fetch knowledge graph data from backend
       const response = await fetch('/api/knowledge-graph');
@@ -200,7 +200,7 @@ function App() {
       };
       setGraphData(mockGraphData);
     }
-  };
+  }, []);
 
   const handleSearchChange = useCallback((term) => {
     setSearchTerm(term);
@@ -217,11 +217,11 @@ function App() {
   };
 
   // Toast management
-  const addToast = (message, type = 'info') => {
+  const addToast = useCallback((message, type = 'info') => {
     const id = Date.now() + Math.random();
     const newToast = { id, message, type };
     setToasts(prev => [...prev, newToast]);
-  };
+  }, []);
 
   const removeToast = (id) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));

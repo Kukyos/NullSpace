@@ -21,7 +21,7 @@ async def fetch_nasa_experiments(limit: int = 15) -> List[Dict[str, Any]]:
         
         async with aiohttp.ClientSession() as session:
             search_params = {
-                'q': 'spaceflight OR microgravity OR space OR ISS',
+                'q': '*',  # Get all results, simpler and more reliable
                 'size': limit,
                 'from': 0
             }
