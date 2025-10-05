@@ -20,7 +20,7 @@ const SearchBar = ({ searchTerm, onSearchChange, isSearching }) => {
     } else {
       setSuggestions([]);
     }
-  }, [searchTerm]);
+  }, [searchTerm, quickSearches]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {

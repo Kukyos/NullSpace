@@ -29,7 +29,7 @@ function App() {
 
     // Add event listener for related experiments search
     const handleRelatedExperimentsSearch = (event) => {
-      const { query, excludeId } = event.detail;
+      const { query } = event.detail;
       setSearchTerm(query);
       addToast(`Searching for experiments related to: ${query}`, 'info');
     };
@@ -62,7 +62,7 @@ function App() {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchTerm]);
+  }, [searchTerm, performSearch]);
 
   const loadExperiments = async () => {
     try {
@@ -171,7 +171,7 @@ function App() {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const data = await response.json();
+      await response.json();
       // Don't replace allExperiments, we'll filter in the memoized function
     } catch (error) {
       console.error('Error searching experiments:', error);
