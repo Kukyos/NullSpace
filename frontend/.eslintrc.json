@@ -1,0 +1,7 @@
+{
+  "extends": ["react-app"],
+  "rules": {
+    "no-use-before-define": "off",
+    "react-hooks/exhaustive-deps": "warn"
+  }
+}

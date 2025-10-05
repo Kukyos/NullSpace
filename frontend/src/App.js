@@ -22,6 +22,27 @@ function App() {
   const searchTimeoutRef = useRef(null);
   const [toasts, setToasts] = useState([]);
 
+  // Define performSearch before it's used in useEffect
+  const performSearch = useCallback(async (term) => {
+    if (term.trim() === '') {
+      setIsSearching(false);
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/search?query=${encodeURIComponent(term)}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      await response.json();
+      // Don't replace allExperiments, we'll filter in the memoized function
+    } catch (error) {
+      console.error('Error searching experiments:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
   useEffect(() => {
     // Load initial data
     loadExperiments();
@@ -159,26 +180,6 @@ function App() {
       setGraphData(mockGraphData);
     }
   };
-
-  const performSearch = useCallback(async (term) => {
-    if (term.trim() === '') {
-      setIsSearching(false);
-      return;
-    }
-    
-    try {
-      const response = await fetch(`/api/search?query=${encodeURIComponent(term)}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      await response.json();
-      // Don't replace allExperiments, we'll filter in the memoized function
-    } catch (error) {
-      console.error('Error searching experiments:', error);
-    } finally {
-      setIsSearching(false);
-    }
-  }, []);
 
   const handleSearchChange = useCallback((term) => {
     setSearchTerm(term);

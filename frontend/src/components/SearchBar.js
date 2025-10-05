@@ -1,14 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 
 const SearchBar = ({ searchTerm, onSearchChange, isSearching }) => {
   const [isFocused, setIsFocused] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const inputRef = useRef(null);
 
-  const quickSearches = [
+  const quickSearches = useMemo(() => [
     'microgravity', 'gene expression', 'muscle atrophy', 'arabidopsis',
     'cardiac function', 'bone density', 'spaceflight', 'ISS'
-  ];
+  ], []);
 
   useEffect(() => {
     if (searchTerm.length > 1) {
