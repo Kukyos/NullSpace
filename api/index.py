@@ -1,8 +1,144 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
 import json
+import sys
+import asyncio
+import aiohttp
+from typing import List, Dict, Any, Optional
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# NASA GeneLab API Integration
+async def fetch_nasa_experiments(limit: int = 15) -> List[Dict[str, Any]]:
+    """Fetch experiments from NASA GeneLab API"""
+    try:
+        search_url = "https://genelab-data.ndc.nasa.gov/genelab/data/search/studies"
+        
+        async with aiohttp.ClientSession() as session:
+            search_params = {
+                'term': 'spaceflight OR microgravity OR space OR ISS',
+                'size': limit,
+                'from': 0,
+                'sort': 'relevance'
+            }
+            
+            async with session.get(search_url, params=search_params, timeout=10) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    studies = data.get('studies', [])
+                    
+                    experiments = []
+                    for study in studies[:limit]:
+                        experiment = format_nasa_experiment(study)
+                        if experiment:
+                            experiments.append(experiment)
+                    
+                    logger.info(f"Successfully fetched {len(experiments)} experiments from NASA GeneLab")
+                    return experiments
+                else:
+                    logger.error(f"NASA API request failed with status: {response.status}")
+                    return []
+                    
+    except Exception as e:
+        logger.error(f"Error fetching NASA GeneLab data: {str(e)}")
+        return []
+
+def format_nasa_experiment(study: Dict) -> Optional[Dict[str, Any]]:
+    """Format NASA study data for our application"""
+    try:
+        accession = study.get('accession', '')
+        if not accession:
+            return None
+        
+        # Extract organism
+        organism = 'Unknown organism'
+        if 'organisms' in study and study['organisms']:
+            organism = study['organisms'][0].get('scientificName', organism)
+        
+        # Extract mission/project info
+        mission = 'NASA Mission'
+        if 'projectType' in study:
+            mission = study['projectType']
+        
+        # Extract keywords from various fields
+        keywords = []
+        title_lower = study.get('title', '').lower()
+        desc_lower = study.get('description', '').lower()
+        
+        space_keywords = ['microgravity', 'spaceflight', 'space', 'ISS', 'gene expression', 
+                         'muscle atrophy', 'bone density', 'cardiovascular', 'radiation',
+                         'plant growth', 'development', 'immune system']
+        
+        for keyword in space_keywords:
+            if keyword in title_lower or keyword in desc_lower:
+                keywords.append(keyword)
+        
+        # Extract data types
+        data_types = []
+        if 'assays' in study:
+            for assay in study['assays']:
+                if 'measurementType' in assay:
+                    data_types.append(assay['measurementType'])
+        
+        experiment = {
+            'id': accession,
+            'title': study.get('title', 'Unknown Study'),
+            'summary': (study.get('description', '').strip()[:400] + '...' 
+                       if len(study.get('description', '')) > 400 
+                       else study.get('description', '')),
+            'organism': organism,
+            'mission': mission,
+            'keywords': keywords[:8],  # Limit keywords
+            'dataTypes': list(set(data_types))[:5],  # Limit and dedupe data types
+            'publicationCount': len(study.get('publications', [])),
+            'duration': 'Variable',
+            'submissionDate': study.get('submissionDate', ''),
+            'releaseDate': study.get('releaseDate', ''),
+            'projectType': study.get('projectType', ''),
+            'studyType': study.get('studyType', '')
+        }
+        
+        return experiment
+        
+    except Exception as e:
+        logger.error(f"Error formatting experiment: {str(e)}")
+        return None
+
+async def search_nasa_experiments(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Search NASA GeneLab experiments by query"""
+    try:
+        search_url = "https://genelab-data.ndc.nasa.gov/genelab/data/search/studies"
+        
+        async with aiohttp.ClientSession() as session:
+            search_params = {
+                'term': query,
+                'size': limit,
+                'from': 0
+            }
+            
+            async with session.get(search_url, params=search_params, timeout=10) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    studies = data.get('studies', [])
+                    
+                    experiments = []
+                    for study in studies:
+                        experiment = format_nasa_experiment(study)
+                        if experiment:
+                            experiments.append(experiment)
+                    
+                    return experiments
+                else:
+                    return []
+                    
+    except Exception as e:
+        logger.error(f"Error searching NASA experiments: {str(e)}")
+        return []
 
 # Create FastAPI app for serverless deployment
 app = FastAPI(
@@ -111,8 +247,13 @@ async def root():
 
 @app.get("/api/experiments")
 async def get_experiments():
-    """Get all NASA bioscience experiments"""
-    return {"experiments": mock_experiments}
+    """Get all NASA bioscience experiments from GeneLab API"""
+    try:
+        experiments = await fetch_nasa_experiments()
+        return {"experiments": experiments}
+    except Exception as e:
+        # Fallback to mock data if NASA API fails
+        return {"experiments": mock_experiments}
 
 @app.get("/api/knowledge-graph")
 async def get_knowledge_graph():
@@ -123,8 +264,21 @@ async def get_knowledge_graph():
 async def search_experiments(query: str = ""):
     """Search experiments by query"""
     if not query:
-        return {"results": mock_experiments}
+        try:
+            experiments = await fetch_nasa_experiments()
+            return {"results": experiments}
+        except:
+            return {"results": mock_experiments}
     
+    try:
+        # Try NASA API search first
+        nasa_results = await search_nasa_experiments(query)
+        if nasa_results:
+            return {"results": nasa_results, "query": query, "source": "NASA GeneLab"}
+    except:
+        pass
+    
+    # Fallback to mock data search
     query_lower = query.lower()
     filtered = []
     
@@ -136,7 +290,7 @@ async def search_experiments(query: str = ""):
             any(query_lower in keyword.lower() for keyword in exp["keywords"])):
             filtered.append(exp)
     
-    return {"results": filtered, "query": query}
+    return {"results": filtered, "query": query, "source": "mock data"}
 
 @app.get("/health")
 async def health_check():
